@@ -1,22 +1,41 @@
 package test
 
 import (
-    "bytes"
-    "net/http"
-    "net/http/httptest"
-    "testing"
+	"bytes"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"testing"
 
+	"github.com/gin-gonic/gin"
 	"github.com/random-number-api/pkg"
-    "github.com/gin-gonic/gin"
-    "github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/assert"
 )
+var router *gin.Engine      
+var resultStore *pkg.ResultStore
 
-func TestGenerate(t *testing.T) {
+func TestMain(m *testing.M) {
 	gin.SetMode(gin.TestMode)
 
-	router := gin.Default()
-	router.POST("/generate", pkg.Generate)
+	resultStore = pkg.NewResultStore()
+	numberProducerHandler := pkg.NewNumberProducerHandler(resultStore)
+	resultRetrievalHandler := pkg.NewResultRetrievalHandler(resultStore)
 
+	router = gin.Default()
+	router.POST("/generate", numberProducerHandler.Handle)
+	router.GET("/result/:id", resultRetrievalHandler.Handle)
+
+	exitVal := m.Run()
+	tearDown()
+	os.Exit(exitVal)
+}
+
+func tearDown() {
+	resultStore = nil 
+}
+
+
+func TestGenerate(t *testing.T) {
 	w := httptest.NewRecorder()
 	reqBody := []byte(`{"amount": 100}`)
 	req, _ := http.NewRequest("POST", "/generate", bytes.NewBuffer(reqBody))
@@ -30,13 +49,8 @@ func TestGenerate(t *testing.T) {
 }
 
 func TestGenerate_InvalidRequest(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-
-	router := gin.Default()
-	router.POST("/generate", pkg.Generate)
-
 	w := httptest.NewRecorder()
-	reqBody := []byte(`{"amount": -1}`) // Invalid amount
+	reqBody := []byte(`{"amount": -1}`)
 	req, _ := http.NewRequest("POST", "/generate", bytes.NewBuffer(reqBody))
 	req.Header.Set("Content-Type", "application/json")
 
@@ -48,11 +62,6 @@ func TestGenerate_InvalidRequest(t *testing.T) {
 }
 
 func TestGetResults_NotFound(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-
-	router := gin.Default()
-	router.GET("/result/:id", pkg.GetResults)
-
 	w := httptest.NewRecorder()
 	req, _ := http.NewRequest("GET", "/result/999", nil) 
 
@@ -64,13 +73,7 @@ func TestGetResults_NotFound(t *testing.T) {
 }
 
 func TestGetResults_Success(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-
-
-	pkg.ResultsMap[0] = 1234 // Simulate a result for ID 0
-
-	router := gin.Default()
-	router.GET("/result/:id", pkg.GetResults)
+	resultStore.StoreResult(0, 1234) 
 
 	w := httptest.NewRecorder()
 	req, _ := http.NewRequest("GET", "/result/0", nil)
